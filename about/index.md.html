@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+    <meta charset="utf-8">
+    <title>GlitterBombGames: Developer Blog</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <link href="../css/normalize.css" rel="stylesheet" media="all">
+    <link href="../css/styles.css" rel="stylesheet" media="all">
+    <link rel="stylesheet" href="../css/base-min.css">
+    <link rel="stylesheet" href="../css/grids-core-min.css">
+    <link rel="stylesheet" href="../css/grids-min.css">
+</html>
+
+<body style="margin:auto">
+        **About**
+
+I'm Sepehr Taghdisian, wanna-be engine creator and indie game developer. I blog here about the stuff that I'm doing.
+
+Mostly I'm working on my open-source stuff, trying to make my own multiplatform game development tools. Unfortunately in the place that I live, there is little to no incentive for gamedev studios to do low-level game development and almost every game company use unity or unreal exclusively, so my skills as engine developer mostly remain as hobbies and open-source contributions.
+
+Here are my active projects on github:
+
+- [rizz](https://github.com/septag/rizz): Lightweight and portable game development framework in C.
+- [sx](https://github.com/septag/sx): Portable base library for C programmers, designed for performance and simplicity.
+- [glslcc](https://github.com/septag/glslcc): GLSL cross-compiler using SPIRV-cross
+- [dds-ktx](https://github.com/septag/dds-ktx): Single header KTX/DDS reader
+- [sjson](https://github.com/septag/sjson): Fast and portable single-header C file Json encoder/decoder
+- [atlasc](https://github.com/septag/atlasc): Builds atlas texture from a bunch of input images. 
+
+Here are some of past projects. Some of them were commercially used but most of them were done for the purpose of learning game and engine development:
+
+# Fisherboy <small>(2017-2018)</small>
+
+
+Our studio's first mobile game, which is currently released in [domestic market](https://cafebazaar.ir/app/com.glitterbombgames.fisherboy/?l=en) as _"Amiroo"_. Unfortunately, the game haven't yet released on google and apple stores due to sanctions laws.  
+
+![](https://youtu.be/kx-MQgTPMds)
+
+For this game, I have built our own C++ open-source engine and tools called [termite](https://github.com/septag/termite). For more detailed technical information you can check out my [blog post](../posts/fisherboy-technical).
+
+# Darkhammer Engine <small>(2012-2014)</small>
+
+My first attempt at learning multi-platform engine development. It was written in C99, had Lua, C# and python bindings. Ran on Linux/Windows and Mac.
+I have learned many stuff with this project, including rediscovering how better C language was compared to most C++ stuff, OpenGL and multiplatform programming. 
+
+You can check out the [source code](https://github.com/septag/darkhammer) and see some videos about the project tech. 
+Some of the techs include:
+
+- Direct3D11/OpenGL4 renderer
+- Basic physically based lighting 
+- Software occlusion culling using SSE4
+- Hot loading of assets
+- Embedded Profiler with Web based client
+- PhysX integration
+- Scripting support for Lua. C# and Python bindings
+- Character animation controller 
+- Strict memory management
+- Cascaded shadow maps
+- Tile based deferred rendering (CPU tiles)
+
+<div class="pure-g" style="text-align: center">
+    <div class="pure-u-1-1">![](https://youtu.be/Onvsn-N7Ruk)</div>
+    <div class="pure-u-1-1">![](https://youtu.be/Xbsj6LUVThE)</div>
+</div>
+
+  
+# Hammer Engine v0.7 <small>(2007-2009)</small>
+
+Upgraded rendering to a more robust pipeline, this version of _Hammer Engine_ included:
+
+- Direct3D10 Renderer
+- Faster Rendering, deferred lighting/light prepass
+- tile based light culling
+- HDR rendering with MSAA
+- Shader Graph editor and builder
+- Automatic exposure control
+- Tools are based on Qt4 framework
+
+<div style="text-align: center">![](https://youtu.be/2je-RfjVuBA)</div>
+<div class="pure-g">
+    <div class="pure-u-1-2">![](07/HmrShaderDemo.jpg)</div>
+    <div class="pure-u-1-2">![](07/HmrShaderEdit.jpg)</div>
+    <div class="pure-u-1-3">![](07/editor.jpg)</div>
+    <div class="pure-u-1-3">![](07/shot02.jpg)</div>
+    <div class="pure-u-1-3">![](07/shot05.jpg)</div>
+</div>
+<small>The sample level is in courtesy of [Ali Rahimi](http://www.ali-rahimi.net).</small>
+
+[Download Tools binary](06/HammerTools-06.zip)
+
+
+# Hammer Engine v0.6 <small>(2006-2007)</small>
+
+This is when I got my upgraded my desktop and got Direct3D9 graphics card. So I decided to rewrite the previous _hammer_ 
+engine using a new renderer. I had a lot of fun with it because it introduced me to shaders and 
+I learned many graphic techniques:
+
+- Direct3D9 renderer
+- Per-Pixel Motion blur using velocity buffers
+- Per-Pixel lighting and shadows
+- Cascaded shadow maps
+- Deferred Rendering (Fat GBuffer)
+- Normal maps
+- Spot/Omni/Directional Lighting
+
+<div class="pure-g">
+    <div class="pure-u-1-3">![](06/shot6.jpg)</div>
+    <div class="pure-u-1-3">![](06/shot9.jpg)</div>
+    <div class="pure-u-1-3">![](06/shot10.jpg)</div>
+</div>
+
+[Demo Video (AVI)](06/hmrengine-vid02.avi)  
+
+
+# Hammer Engine v0.3 <small>(2004-2005)</small>
+
+This is my first attempt at learning game engine development. Inspired by Quake3/Unreal engines. 
+I decided to try and make my own:
+
+- Direct3D8 renderer
+- BSP + PVS compiler
+- Lightmap support
+- World/Asset editor based on MFC framework!
+- Collision detection based on BSP tree
+- Rendering based on BSP-tree
+- Culling based on PVS
+- Skinning and basic skeletal animation
+- Dynamic object lighting based on ray-traced light visibility Octree
+- Perpixel (non-shader) normal mapping. 
+
+![](03/editor.PNG)
+
+[Download Demo](03/HmrEngineDemo0.3.zip)  
+
+[Download Editor](03/HmrEditor0.3.zip)
+
+# OptiCut <small>(2002-2003)</small>
+
+I had this project as a contract job with _Iran Khodro co._ called _OptiCut_, which was used in their 
+interior assembly line to minimize the excess fabric. It basically was a polygon fitting tool.  
+It used different algorithms to achieve the effect, including Genetic Algorithms, Polygon pairing 
+and heuristic box stacking, export/import DXF.
+
+[Download OptiCut](opticut/ocsetup.exe)
+
+<div class="pure-g">
+<div class="pure-u-1-2">![](opticut/screen1.PNG)</div>
+<div class="pure-u-1-2">![](opticut/screen2.PNG)</div>
+</div>
+
+<br>
+<br>
+(insert ../footer.md.html here)
+</body>
+    
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace;}</style><script src="../js/markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

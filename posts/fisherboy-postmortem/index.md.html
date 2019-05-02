@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+    <meta charset="utf-8">
+    <title>GlitterBombGames: Developer Blog</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <link href="../../css/normalize.css" rel="stylesheet" media="all">
+    <link href="../../css/styles.css" rel="stylesheet" media="all">
+    <link rel="stylesheet" href="../../css/base-min.css">
+    <link rel="stylesheet" href="../../css/grids-core-min.css">
+    <link rel="stylesheet" href="../../css/grids-min.css">
+</html>
+
+<body style="margin:auto">
+                        **Fisherboy postmortem and future plans**
+                        <small>10 jan 2019</small>
+
+In this post, I'm gonna discuss the flaws and the stuff that nearly brought me to tears in the previous project _(fisherboy)_, and the stuff that I would like to improve in the next project. Read this [post](../fisherboy-technical") for a more complete technical explanation of that game.  
+
+# Programming Language
+## Sweet old C
+In previous project ([link](https://github.com/septag/termite)) (fisherboy's game engine), I wrote the engine and game itself in C++ with a rather [orthodox](https://gist.github.com/bkaradzic/2e39896bc7d8c34e042b) approach, but with some minor changes integrating some more "Modern C++" features, especially in game code. I can say after many experiences with C++, I'm still not comfortable with the language and it still bothers the hell out of me, especially when the project scales. Maybe I'm not a good C++ programmer and I don't think I'll ever will be, because after C++11, I never even bothered to learn the new stuff. 
+
+In my opinion, orthodox C++ with a very strict feature-set is still a valid choice for game code and even some high-performance code. But in lower-level systems and performance critical code, C is a much better choice than C++:
+
+- It's just simpler, there are much less idioms, patterns and stuff that you have to learn about the language compared to C++. So other C programmers can get right into your project without adapting to your standards. As for C++, each subset of it can be defined as a new language, and every C++ programmer has their own stuff, so the code may eventually become a mess of different C++ standards and idioms, and makes it very hard to read and maintain. In C, despite it's shortcomings which many C programmers are aware of, there is just much less stuff to think when you are coding, so it doesn't gets in your way and leaves you to think about the actual problem, algorithms and data instead of what idiom, syntax, feature and construct to use.
+- Faster build times are much easier to achieve with C. It is much harder to attain faster build times with C++ code base because of all the standards, templates, standard headers and stl library. It is covered very nicely in this [post](https://zeux.io/2019/01/17/is-c-fast/) by _Arseny Kapoulkine_.
+- It's super portable. The ABI is the same across all compilers, compiler behavior is also more predictable, because of the simplicity of the language. It can easily be wrapped and used in other languages. On the contrary, C++ isn't even portable across a single compiler like msvc with different versions!
+- _stl_ library, which many of the modern C++ features are provided for easier use of this library, is not suitable for performance critical applications like games. The syntax is ugly, the code is hard to debug and read, it increases compile times substantially, allocator model is very unintuitive, performance is horrible in debug builds and even the implementations on different platforms are different from each other. So you might be as well ditch the hole thing and use another library, which makes a big part of C++ useless.
+
+I wrote this [darkhammer](https://github.com/septag/darkhammer) engine for educational purposes back in 2012. It was all in C and I had much more pleasant time working on it than the later C++ projects. I could really write what I want faster, moving through the code was easier, there were only files/functions and structs. Debugging was easier because I didn't have to jump from multiple levels of abstraction and C++ mumbo jumbo to reach some code. Binding the code to other languages (on that case, lua, python and [C# bindings](https://bitbucket.org/Amin67v/sharphammer)) was super easy. Many languages can even import and use C functions natively. 
+
+Personally, I have briefly flirted with the [Rust](https://www.rust-lang.org/en-US/) language a bit, but don't have enough familiarity and experience that I could have an opinion about it. Also Jonathan Blow's [JAI](https://github.com/BSVino/JaiPrimer/blob/master/JaiPrimer.md) language seems promising, but it only exists on paper so far :) 
+I couldn't afford to use a new (and portable) language that I don't have any experience with it for my next project so what I decided for the next project was to use C in base library and high performance engine code, and maybe use a very small C++ subset in game/logic/AI code.
+
+## C++
+If I had to use any C++ (mainly higher-level code), I will a very small subset and use the features listed here: 
+
+- **No classes**: I hate classes, whenever you use classes you have to think about the visibility of the data, Pimpl idiom, those ugly public/private syntaxes where you have to scroll one page up to see what method you have access to, property setters/getters, ..., just use _struct_.
+- **No constructor/destructors**: Never use destructors or constructors, everything should be simple POD struct type like in C, we can use some methods with structs, but that's it. whenever loading default values is needed, it can be implemented with a simple function or use initializers. It would also be nice for C++ to have something like C99's designated initializers. The Only exception would be _RAII_ (see below).
+- **Lambdas**: Lambdas are nice additions especially when used in higher-level and UI code. I guess it's safe to use it on stack, but better be assigned as C-style callbacks in critical code. Assigning lambdas to _std::function_ is not recommended anywhere, so just use simple minimal lambdas.
+- **Minimal templates**: No fancy stuff like variadic templates, or deep nested template types. But it's useful in small generic functions.
+- **No namespaces**: I hate namespace ('::') syntax and the confusion namespaces brings in the code.
+- **Minimal operators**: Usage of operators should be allowed but minimal. For example vector math types could really use operators and it makes the math code much more readable.
+- **No Inheritance**: should not be used whatsoever, except for _pure virtual_ classes (structs in our case) and the derived class should provide _override_ keyword.
+- **no RTTI**: Just disable it in the compile flags.
+- **no Exceptions**: Not suited for small and performant code, disable it.
+- **no STL**: _stl_ is just not a good library if you care about memory, performance and compile times, and all we need is already written in C and are much better, see the next section.
+- **no Boost**: This applies to other modern C++ base libraries too. Actually whenever I see someone used boost in their library in github, My immediate reaction is closing the page :).
+- **Default arguments**: This is actually a bit debatable for me, but I can't argue that it makes the code cleaner and the APIs self-documented. The problem with using this feature is that you may forget what was the actual function parameters by looking at the calling code. But still useful to simplify the API with default values.
+- **No function overloading**: I may reconsider using them later, But the fact that it makes guessing which version of the function your are using rather difficult, bothers me and almost always I have to rely on intellisense to scroll through different versions and find the right one. Having different versions may be a little uglier, but at least it shows you what version you are using just by looking at the code.
+- **No C++11 enum**: defining types and other new stuff for the _enums_ could be cool if they could properly convert to their integer types. Unforetunately it's not. So for scoped enums, we can use ```struct MyEnum { enum {...} }``` syntax.
+- **RAII**: This is actually nice, and I used it mostly for mutex and locks, But it's not allowed to allocate/deallocate dynamic memory in these situations.
+- **No new/delete**: They are crap (like most of the stuff from C++). I try to never use them (except _placement_ new which I had to in the previous project because of constructors and all that). Whenever I tried to use them in my previous projects and especially tried to override them, I shot myself in the foot. I had examples of crashing my game in the middle of project, because I used some object somewhere that had this *vtable* inside it, and didn't use _new_ on it when the parent buffer is grown. It may suit well with object-oriented style of programming, but fortunately we won't be using any of those paradigms;
+- **No _virtual_ and No _inheritance_**: Don't use this one too. In my latest work, I don't even use them for _pure virtual_ classes and use the C-style callbacks inside _struct_ pattern for APIs. Aside from bad design choices that inheritance brings, those hidden _vtables_ are tricky and overall I think they are a bad idea. Just use composition and plain _structs_.
+
+# Write your own base library
+_Stl_ is not an option for me. There are lots of debates wither to use stl or not.. But I never use it for high-performance and low-level code anymore. In tools and none critical code I guess it's ok, because it gets the job done quickly. But in high performance code where memory is number one priority, It sucks. There are lots of other base libraries and most of them are better alternatives than _stl_ (well except _boost_) but I simply prefer to write my own and copy/paste and refactor other's code into my base lib. In my opinion base library is crucial to the code base, and because unfortunately we don't have a decent standard and portable C base library, it's better to write it myself and have the full control.  
+The base library will be used all over the code base, so it's better that your know everything about the inner workings of your base library and adapt it to your coding style and design principles.
+
+## SX base lib
+In the previous project I used [bx](https://github.com/bkaradzic/bx) library from the guy who also wrote [bgfx](https://github.com/bkaradzic/bgfx). Branimir (the bgfx guy) is a very talented programmer and does lots of cool stuff and also promotes orthodox C++ in his code. Because the previous project used bgfx, I decided to integrate and use bx too. Bx is clean and well-coded, but it was in C++ and changes rapidly with each bgfx update (and I wouldn't be using bgfx in the next project). I needed to derive something similiar for myself from _bx_ library. It should be in C, and be more simpler in terms of code size, syntax and usage. Plus I wanted to included only the stuff I really wanted to use, like for example my own task-manager, math types, allocators, etc. I also had some experience in writing my own [C base lib](https://github.com/septag/libdhcore) before, so I decided to make another one (hopefully the last one!) and named it [sx](https://github.com/septag/sx) and borrowed many stuff the the _bx_ project into it. It has all the base stuff that I need for my project, including async coroutines which will also eliminate the need for an async library.
+
+# Build and Code size
+One of my important priorities in the next project will be reducing the code size, improve build times, and improve code maintainability.  
+
+I used many 3rdparty libs in the _fisherboy_ game. Most of them was pretty decent actually, but one of my main issues with the previous code was the _size_ and _maintenance_ of it. It was a one man coding project, so code size becomes really important, especially if you need to build it in multiple platforms simultaneously, you need to have a small and a very manageable code-base. Large code-base even if it's not your own, it will also become technical debt in a long run.
+
+## Dependencies and External projects
+I used many 3rdparty libs for _fisherboy_, and most of them was decent and got the job done. But one problem that I was struggling with was managing the build and 3rdparty code beside my own. 
+
+Here's a chart of 3rdparty libs I used for the _fisherboy_ and _termite_ project:
+
+![Figure [project-struct]: Project structure for fisherboy](fisherboy-postm-libs1.png)
+
+I use _cmake_ as the build system. At the beginning of the project, I decided to decouple some bigger libs, build them and put them on the remote server or something, and use _cmake_ download function to download them and extract them in the _deps_ folder of the project, like for example SDL2, Bgfx, Curl and libuv. Some projects that were smaller and didn't have dependencies themselves could be placed inside the project itself and built with a simple cmake script.  
+
+Building and maintaining all these 3rdparty libraries on different platforms takes a lot of time (especially _bgfx_ and it's dependencies), And also makes the open-source project hard to use and build by others, if 3rdparties not maintained regularly. The other problem is debugging, larger code adds to technical debt, so when a bug appears, you have to be able to move through the 3rdparty code and understand it, larger code, especially 3rdparty code which you didn't write, makes it more difficult to be understood and debugged.
+
+On the new project, I plan to ditch and replace many of those dependencies and hopefully make the whole project much more lighter and manageable.
+
+### sokol_gfx vs. bgfx
+[sokol_gfx](https://github.com/floooh/sokol/blob/master/sokol_gfx.h) is a single-header C library that does the similiar thing as _bgfx_ but at a lower-level and well, it's a single-header file :) I'm not totally confident with the *sokol_gfx* because aside from couple of small tests, I haven't done a full project with it, but I'm planning on using it in my future project instead of _bgfx_ due to these reasons:
+
+- *Bgfx* code base is huge compared to *sokol_gfx*. As you can see in my code metrics, the difference is huge counting bgfx's all dependencies and 3rdparty libraries. And I just don't like big projects as I described in this topic, so I'm trying to shrink my code base as much as possible.
+- *Bgfx* is more higher-level than *sokol_gfx*. But I like a lower-level design, Higher level features like command-queues, threading, custom shading language, state management, sorting are not important for me, in fact I want to be able to build those myself on top of the library and as much as the library is closer to the backend API, it's more appealing for my purposes.
+- *Bgfx* shader system is currently not ideal, because it was started about 7 years ago, there was no decent shader solution back then, so the author designed this GLSL like made up language with lots of workarounds and a shader compiler for it. It's close to GLSL but differs in many areas. This makes the shader language not completely recognized by syntax highlighters and IDE tools and forces this new standard on the programmer which is error prone. So what I did for *sokol_gfx* was to use the _glslang_ and _spirv-tools_ libraries and made this [glslcc](https://github.com/septag/glslcc) cross-compiler tool that converts your GLSL code to other languages. I have total control over the tool and I can export reflection info for the API, the syntax is standard and everything works as planned to be with much less effort than bgfx's solution.
+- *Bgfx* is written in C++. My project is C, so I obviously prefer C libraries to C++ ones. of course bgfx comes with C99 wrapper functions which is nice. But building your whole project in C is a nice feature to have.
+- Debugging API with *sokol_gfx* is much easier than *bgfx*. I'll describe this in more detail. 
+    + First of all, *sokol_gfx* comes with imgui API introspection code that you can view all *sokol_gfx* objects and API calls in your frame. This is a very nice feature to have, because in these types of middle-man APIs, the backend can be debugged using graphics debuggers like _RenderDoc_, but you can only debug the backend (D3d/GL) calls with them, not the actual API higher-level calls in your program. So having some kind of debugging information of what calls you have made in runtime, really helps. 
+    + In case of _bgfx_ this becomes much more harder, because the unlike *sokol_gfx*, the calls are not direct calls to backend API, they get queued in an internal command-buffer and read back another time (even on a different thread in MT mode), so can not easily figure out what calls you made wrong that lead to a specific behavior in backend API.
+- I like *sokol_gfx* API design more than *bgfx*. I think in *bgfx*, it's easier to set states and reach the actual draw call, because there are no state objects and you have to make them before submitting and each individual state has it's own function like setting draw states, buffers, textures and so on. But in *sokol_gfx*, the API is more modern and maps better to the new backend APIs, instead of setting individual states for the pipeline, you create these pipeline objects where they hold all the states and assign them with one call, this makes the code cleaner and easier to understand, also prevents user errors where state calls can be scattered through the code. Also I don't like the concept of _views_. Some of the commands, including draw submits require you to set _viewId_ so they will be sorted afterwards, this is a higher level approach that I prefer to implement it my own way. Views must be managed carefully, or there is a potential of many conflicts and bugs, because there states may be overlapped if you are not careful and also dynamically assign view Ids.
+
+- Because of bits of C++ mindset that is used in _bgfx_, the code is harder to modify and feature additions are much harder than *sokol_gfx*. I will give you an example, let's assume that we want to add a function to *bgfx*. This is the actual code flow from API calls to the actual backend API:
+
+    ********************************************************************************
+    * .--------.     .------------.     .----------.      .------------------.     *
+    * | bgfx.h +---->| bgfx.cpp   +---->| bgfx_p.h +--+-->|  renderer_gl.cpp |     *
+    * '---+----'     '------------'     '----------'  |   '------------------'     *
+    *     |                                           |                            *
+    *     |                                           |   .--------------------.   *              
+    *     |                                           +-->| renderer_d3d11.cpp |   *
+    *  .--+---------.                                 |   '--------------------'   *
+    *  | c99/bgfx.h |                                 |                            *
+    *  '------------'                                 |   .------------------.     *
+    *                                                 +-->| renderer_mtl.mm  |     *
+    *                                                     '------------------'     *
+    ********************************************************************************
+
+<blockquote>
+    First you have to add the function declaration in `bgfx.h` and `c99/bgfx.h`, then implement it in `bgfx.cpp` to validate arguments and redirect the calls to the _context_ which must be implemented in `bgfx_p.h`. The context queues the commands and pushes them to a buffer for later use by backend units. In individual backend units (`renderer_gl.cpp`/`renderer_d3d11.cpp`/...), the actual commands are executed by the backend API. Also each command may be handled by individual classes like `TextureGL`, `ProgramGL` and so on. For a normal API call, you may get about 4 jumps in the code base to reach the backend. It's actually a cleanly designed C++ project compared to many other crap ones out there. 
+
+    But let's take a look at how it can be done in *sokol_gfx*:
+    There is only one header file with implementation, so there is no jumping through files. Every API call is a direct interpretation to backend with maybe one jump to the backend specific function. This makes debugging super easy, because you can simply step through the code and reach the backend. and here's how you can modify or add a function: 
+
+    ~~~~ C
+    #define SOKOL_IMPLEMENT
+    #include "sokol_gfx.h"
+
+    #ifdef SOKOL_D3D11
+    static void set_some_state() {
+        const _sg_d3d11_backend_t* backend = _sg.d3d11;
+        // do something with device objects ...
+    }
+    #elif defined(SOKOL_GL33)
+    static void set_some_state() {
+        const _sg_gl_backend_t* state = _sg.gl;
+        // ...
+    }
+    #elif defined(SOKOL_METAL)
+    static void set_some_state() {
+        const _sg_mtl_backend_t* state = _sg.mtl;
+        // ...
+    }
+    #endif
+    ~~~~
+
+    As you can see, adding a function to the API is as easy as adding 3 or 4 functions in a single file! 
+    This simplicity not only applies to changing and adding code, but more importantly, reading and debugging it which is a huge difference. In my personal opinion.
+</blockquote>
+
+### sokol_app vs. SDL
+I wanted to ditch SDL2, mostly because of it's dependency size and the fact that it didn't play well with bgfx on some platforms. SDL2 is an extensive library, which has all the stuff including 2d graphics, sound, windowing, input, general os related, etc. But I only used the windowing and initialization part of SDL2 which was overkill for my project. Later, I used *SDL_mixer* for sound, and it uses SDL2 for it's audio backend.   
+Anyways, another great header in *sokol* set of libraries is [sokol_app](https://github.com/floooh/sokol/blob/master/sokol_app.h). And is doing exactly what I need. It's a single header library which makes it very suitable for integrating inside my project. It's not as feature-rich as SDL2. Currently it supports windowing, basic touch, keyboard and mouse input, events and context creation, runs all major mobile and PC platforms and works best with *sokol_gfx*. It may be somewhat a bit immature and may have bugs. But the programmer (Andre Weissflog) is very active on the project and doing a great job fixing problems and adding features. 
+
+### sokol_audio
+I haven't played with this library yet, It's a simple audio backend running on all major platforms (with the exception of the android I think) But looks very promising. I may not use this so early on, because It's very low-level and is currently missing android platform, which is one of my main target platforms. But I'm planning to replace the current *SDL_mixer + SDL2* with this and write a minimal sound control and mixer on top of it. But that would be a separate project by itself because it will take some time to implement streaming, audio channels and mixer, but the good part is that it integrates well into engine code and can use memory and threading optimizations. So what I'm gonna do is using a silimar but more mature and convenient sound library like [soloud](https://github.com/jarikomppa/soloud) and study it's code a bit, then I'd like to replace it with my own with the help of *sokol_audio* later on.
+
+### RapidJson vs sjson
+For json parsing and writing library I used [RapidJson](https://github.com/Tencent/rapidjson) which is a heavy template C++ json library. It's fast and has many features. But I didn't like it, because of the fact that it was very heavy on templates. Almost every type is a template, most of the time, nested templates. And I use custom memory allocators everywhere which made overriding this library for different allocators a pain.  
+Also compile times and executable size got higher and higher when I used it in multiple places. So I searched around abit and found a decent json implmentation [rustyrussel/ccan](https://github.com/rustyrussell/ccan/tree/master/ccan/json) and modified it heavily to meet my needs. Added a bunch of stuff like object and string pooling and overridable memory allocations and put it inside a single header for better integration to my projects and named it [sjson](https://github.com/septag/sjson)
+
+### Curl
+Curl is also another extensive and complete network client library, supports almost any protocol you can think of. But what I really need is just sending some rest rpc calls or download a file from http server. The catch here is the SSL and https support. I can write the whole thing myself and ditch the curl dependency, But there is this very light, single header [http](https://github.com/mattiasgustavsson/libs/blob/master/http.h) library from _Mattias Gustavsson_, and I think it should do what I need, except _https_. In that case I guess I have to implement _https_ on top it, or ditch the whole https thing and use my own internal encrypting/decrypting of data, if security is needed.
+
+So, which all those trimming and house-cleaning, the new dependency and components graph of the future engine will look something like this:
+
+![Figure [future-struct]: rizz project structure](future-libs.png)
+
+As you can see, the whole external lib branch is eliminited. And here's a brief codesize report of libraries (with their own 3rdparty libs and headers) that needs to be built for each solution:
+
+| old        | KLOC     |  new          | KLOC   |
+| ---------  | -------- | ----------    | ------ |
+| bgfx       |  634     | sokol_gfx     | 7      |
+| bimg       |  48      | ..            | 0      |
+| bx         |  31      | sx            | 19     |
+| SDL2       |  190     | sokol_app     | 5      |
+| SDL2_mixer |  153     | sokol_audio   | 1      |
+| curl       |  198     | http (matt)   | 1      |
+| RapidJson  |  11      | sjson         | 2      |
+| SUM        |  1265    | SUM           | 35     |
+
+As you can see, I have roughly trimmed down about 1230 KLOC from the project by switching to lighter and more specific C libs with much less 3rdparty dependencies.
+This is a huge amount of code considering that my whole project (without 3rdparties), the engine (termite) and the game itself was about 80 KLOC! Now Imagine how much the code will be lighter and faster to build and maintain on multiple platforms. This is also more important for open-source projects where less code and dependencies are much prefered for the users.
+
+# Iteration times
+One of the things that really annoyed me in *fisherboy* was slow iteration times, and my main focus on the next thing would be lowering development iteration times:
+
+## Assets
+Assets (images, spritesheets, sounds, ...) were using hot-reloading in *fisherboy* for development builds only. It was a nice little feature but didn't have much impact on the speed of development, because we had one artist and me as a programmer. When the artist finished some art, she would put the PNGs on the server so I could integrate them inside the engine. But the problem was that many art assets where in form of atlases, and we were using the [TexturePacker](https://www.codeandweb.com/texturepacker) tool to make those atlases. So I had to fetch the art and pack them into sheets for the first time and save the *TexturePacker* atlas file.  
+Now when any art is changed, I had to run the TexturePacker command-line tool on the atlas file again to export final image to the engine. Creating, modifing and tweaking new atlases was really time consuming for me. And because I did it all on my system, our artist couldn't use the hot-reload feature on assets on her own system.  
+Well, some asset types like sounds where benefiting from hot-reload, but that wasn't that much to be considered useful.  
+I had some scripts to auto-make baking assets to mobile platform, But it was just happening on android deployment and didn't help that much in everyday development on windows.  
+
+What I'm planning to do in the future, is to streamline this part of the pipeline and put it all in the hands of the artist with some helping tools.   
+First of all there should be some form of build database file that holds build information for each asset. For example, we should be able to assign multiple PNG files to an atlas, set it up with minimal effort from the user, and save it to the database. Everytime the artist changes a PNG on the local system, it should detect the change, fetch the build information from the database, make the atlas and push it to asset server. The other development machines (which is mine) should automatically fetch the atlas and put it inside the game asset directory, so the runtime will detect the changes and reload the file.  
+
+## Shaders
+In *fisherboy*, shaders were the only assets that didn't have hot-reloading, because of it's complexity and lack of reflection information. This was not a very annoying problem for our project, because it was a 2D game and we didn't have that much shaders. But shader hot-reloading can be a really important feature when you are working on a bigger or a 3D project. It also helps more to make the game look better, because you can iterate on shaders fast and don't re-run the game each time you tweak a function or something.
+
+I already made my own shader compiler tool [glslcc](https://github.com/septag/glslcc) that exports shader reflection along side the code/bytecode, so by having reflection info, I can now load the info and properly change the pipeline to match the new uniform variables, vertex inputs, etc. But it should probably come with C++ code hot-reload too, which I'll explain next.
+
+## C/C++ code
+I didn't have any scripting language in *fisherboy* at my disposal, because I was the only one working on the game and didn't have the time to bind and integrate a scripting language into the engine, and didn't like it either due to GC and VMs. So I coded the whole game in C++. Now the biggest problem was code iteration and build times. In terms of everyday gameplay mechanics implementation, I had to re-run the game, each time I tweaked some variable or changed the code. This actually consumed most of my time, especially in polishing gameplay. I tried using Visual Studio's *Edit & Continue* feature, but it didn't help me either, because it was lacking so much and it was buggy too. I couldn't change static variable data, couldn't change constants and most of the times hitting edit & continue didn't work at all ! 
+
+I'm not gonna use a scripting language, so my plan is to make the C/C++ game code run inside a DLL/SO and hot-reload the binary on every build. The engine becomes the host to the game and runs the DLL, every time the game DLL is overwritten, engine detects it and reloads the DLL, restoring the static data and game-state. This feature must be implemented from day one and the programmer should be careful about the data and shared memory (pointers) between engine and the game. I already did this in my WIP work with the help of an open-source library and will do a blog post on this later.
+
+## Deployment
+I didn't automate deployment and testing on multiple platforms with *fisherboy*. That brought me some real problems in terms of having a working binary for every platform I was targeting. This was pretty important, because android and iOS platforms have their differences with development windows build. The best approach would be that I have working builds on every platform at the end of each day, so I can test it out, optimize and do fixes constantly. I didn't thought of this, and what really happened is that I left the development of iOS in the middle of the project, and was too lazy to prepare and build android binary everyday. At the end the android build was more buggy than windows development version, and iOS is still incomplete after 6 months of it's release on android!
+
+What I'm planning to do is automate this process. I would need couple of python scripts and other tools to bake and sync assets for each target platform, and build the final binary automatically. This may take some effort but it's not that hard. Hopefully android platform have multi-platform development that we can build the binary directly on the development system. As for iOS, we have to _rsync_ the files to the MacOS development machine and run some build scripts on it. 
+
+# Physics
+For *fisherboy*, I used *Box2D* physics library. But I think I made this decision rather without deeply thinking about it and see if I really need it for my project or not. What I mean is actually the *dynamics* not the collision, of course the game needed some kind of collision detection. But as for dynamics simulation, it was used very sparsely and most of the effects were only cosmetic and didn't affect the gameplay.  
+Of course it gave the game better look in some areas, like the debris that fell from the walls or the impact of spear into stones, but almost all other stuff was animated, kinematic or simulated by the game itself and not the physics. And also I could simulate those minor dynamic effects with simple procedural animations.  
+Using a physics engine has it's own benefits but it makes the game code much more complex and tricky, lots of debugging and tweaking time went into physics dynamics and collisions. I know writing a collision system is a beast itself, but I have to analyze the project and the complexity of it and decide wither I really need a complete physics engine next time or some simple collision routines with some extra coding solves it more gracefully.
+
+# ECS
+This needs a post for itself, but I wasn't happy with my [ecs](https://github.com/septag/termite/blob/master/include/termite/ecs.h) system I implemented. 
+The system was consisted from *components*, *entities* and *component groups*. Similar to other *ecs* systems, *entity* was only an Id that was referencing multiple components. *component groups* was this group of components that the user could update and enumerate manually.  
+The component system updated each type of components from an array like this:  
+
+~~~~ c
+struct Transform {};
+struct Physics {};
+
+//
+void update_transforms(const ComponentHandle* handles, uint16_t count, float dt)
+{
+    for (uint16_t i = 0; i < count; i++) {
+        Transform* t = getComponentData<Transform>(handles[i]);
+        // update transform
+    }
+}
+
+// init: register components (systems)
+register_component(Transform, update_transforms, ..);   
+register_component(Physics, update_physics, ..);
+
+~~~~
+
+This is similiar to many other *ecs* systems in it's simple form. My system didn't have dependency graphs and stuff like that for updates, It just had this multiple orders of update, like *PreUpdate*, *Update*, *PostUpdate*, *FixedUpdate* callbacks where user could override for each component type. This caused a bit of problems and headaches, especially in places where component updates relied on each other, and also conflicts with physics system which had it's own update. 
+
+The problem was that I actually followed a *trend* which was ECS blindly, and I didn't see my problem as what it actually was.  
+
+My point is that *do we really need ECS for this game or not ?*  
+I think ECS tends to complicate gameplay code, it's a very general way of data-oriented approach to gameplay programming for a more generic engines, where designers and programmers can add functionalities to the engine in a data-oriented way.
+But gameplay code is something that you really don't want to be complex and hard to maintain. And I'm still not sure it even improves performance or not.  
+One of benefits of ECS is that it is cache-friendly, it divides fat data into components and puts them into linear arrays in memory, so going through them and updating them is fast and efficient. But game code tends to be very generic and unpredictable and doesn't have any specific access pattern like a particle system. Also gameplay code is most of the times written fast and without much first thought. For example, in *fisherboy* most of the times the components needed to access some other components in order to update. So we had lots of these situations where we had to access different components to update one. In those places, it would actually be more efficient to put those components into fat structs (non ECS Entities) and access them for each object update.  
+
+The problem is that in ECS, I almost never assembled new entity types from components, never used multi-threading in ECS because it was a hard problem to solve at the time and I didn't bothered with it (and never needed it), I never had large number of entities so I can somehow benefit from cache coherency and treat everything like a particle system. So all the theoretical benefits of the ECS were not even needed by my project!
+
+Right now I'm thinking about making gameplay code simpler. I have to implement it to have a better idea of the whole thing, and that leaves me to another future post. But looking at it briefly, it would be an object factory with data composition and some kind of reflection. something like this: 
+
+~~~~ c
+// Components
+struct Transform {};
+struct Physics {};
+struct Renderable {};
+
+// Entity types, unlike ECS, each entity type have a different struct
+struct MyObject
+{
+    Transform  t;
+    Physics    p;
+    Renderable r;
+};
+
+register_entity(MyObject, {
+    COMPONENT(Transform, MyObject, t),
+    COMPONENT(Physics, MyObject, p),
+    COMPONENT(Renderable, MyObject, r)
+});
+
+Entity ent = create_entity("MyObject");
+
+// generic mode
+bool has_physics = component_exists(ent, "Physics");
+if (has_physics) {
+    Physics* p = get_component<Physics>(ent, "Physics");
+    p->apply_force(..);
+}
+
+// direct access mode
+MyObject* obj = get_obj<MyObject>(ent);
+
+// update physics
+obj->p.apply_force(..);
+
+~~~~
+
+Taking another approach without sticking to some design pattern, will hopefully make my game code much more readable and easier to write and debug. Right now it's too soon to judge, but I will definitely write a blog post about this topic when I design and test something interesting.
+
+Well, this post has gone too long, this is it for now. 
+
+# Links and references
+
+<div class="pure-g">
+    <div class="pure-u-1-2">
+        
+        - [rizz](https://github.com/septag/rizz): new stuff
+        - [termite](https://github.com/septag/termite): fisherboy engine
+        - [bx](https://github.com/bkaradzic/bx): branimir's base lib
+        - [sokol](https://github.com/floooh/sokol/): sokol headers
+        - [bgfx](https://github.com/bkaradzic/bgfx): 
+        - [darkhammer](https://github.com/septag/darkhammer)
+        - [sharphammer](https://bitbucket.org/Amin67v/sharphammer)
+        - [sx](https://github.com/septag/sx)
+        - [libdhcore](https://github.com/septag/libdhcore)
+    </div>
+    <div class="pure-u-1-2">
+
+        - [glslcc](https://github.com/septag/glslcc)
+        - [soloud](https://github.com/jarikomppa/soloud)
+        - [sjson](https://github.com/septag/sjson)
+        - [RapidJson](https://github.com/Tencent/rapidjson)
+        - [TexturePacker](https://www.codeandweb.com/texturepacker)
+        - [Rust](https://www.rust-lang.org/en-US/)
+        - [JAI](https://github.com/BSVino/JaiPrimer/blob/master/JaiPrimer.md)
+    </div>
+</div>
+                        
+<br>
+<br>
+(insert ../../footer.md.html here)
+</body>
+    
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace;}</style><script src="../../js/markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
