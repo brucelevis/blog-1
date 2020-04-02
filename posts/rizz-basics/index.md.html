@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+    <meta charset="utf-8">
+    <title>GlitterBombGames: Developer Blog</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <link href="../../css/normalize.css" rel="stylesheet" media="all">
+    <link href="../../css/styles.css" rel="stylesheet" media="all">
+    <link rel="stylesheet" href="../../css/base-min.css">
+    <link rel="stylesheet" href="../../css/grids-core-min.css">
+    <link rel="stylesheet" href="../../css/grids-min.css">
+</html>
+
+<body style="margin:auto">
+    **Fisherboy technical document**
+    <small>This document is subject to change</small>
+    <small>Revision 1.0: 26 october 2019</small>
+
+    In this article, I will give you an overview of _rizz_ architecture, it's design philosophy and how you can start creating applications and write plugins for it.
+
+    _rizz_ is a small C framework to give the developers a head start in multi-platform applications. It is tailored towards flexibility and performance, especially for game development and high-performance applications.
+
+    # Design Principles
+    The design principles are pretty much same as [OurMachinery](https://ourmachinery.com/files/guidebook.md.html#omg-design:designprinciples), so I basically copy/paste the main bullet points here, with some minor exceptions:
+
+    - **Code must be easy to change:** In order to be able to adapt to change quickly, I assumed that, there is no specific use case for the framework, instead, the programmer is responsible to make his building blocks on top of the _rizz_ framework from scratch. This keeps the core of the engine small and flexible enough and changes will mostly come in user side instead of the engine itself.
+    - **Less is more:** I take special care keeping the code size of the project small. As a single solo developer, it's pretty hard to maintain a big code-base especially on multiple platforms. So, _rizz_ has minimum amount of 3rdparty libraries, and the core of the engine is kept small and flexible enough for developers to add extra functionality when they need it.
+    - **Keep it simple:** C language being minimal and small helps a lot in this regard. Care is taken to keep the source code simple and have less abstractions than most C++ counterparts. Most data structures consist of simple dynamic arrays and tricky optimizations will only be applied if it's proven to be a bottleneck.
+    - **Explicit is better than implicit:** Fortunately, there are no C++ idioms to make this matter worse, but there are some macros here and there to make things simple for developers, but I wouldn't go overboard with this and will keep the code as much explicit as possible.
+    - **Design with performance in mind:** As I mentioned before, _rizz_ is designed to be performant, the performance will be definitely improved on next iterations with more profiling in real-world tests. But the idea is to prefer data-oriented practices and performance to beginner friendliness and ease of use.
+    - **Design for fast iterations:** Build times are kept at minimum due to the code being small and not dependent on many 3rdparty libraries. C/C++ live code reloading is supported with the plugin system and all assets can be hot-reloaded on demand. It's an important part of _rizz_ development to lessen the iteration times and it will continue improve upon this.
+    - ~~**Deliver changes quickly**~~: I'm a solo developer and this project is part time, so I won't be able to deliver changes quickly as expected, but changes and bug fixes will mostly come in _master_ branch immediately after they are fixed and all of the examples would be working correctly after a little while. 
+    - **Avoid Coupling:** Almost every part of the engine can be abstracted and ripped out on demand because the most basic parts of it are abstracted away and presented through a middle API, like graphics backends or task manager. Most of other features are implemented as plugins anyways, so there would be no coupling with other systems.
+    - **Everything is a plugin:** This is actually a solution to many problems, keeping the code small and the code being easy to change. So, every feature in the engine will be implemented as a plugin, like different sound engines, physics, renderers, etc. This approach makes the engine small and flexible as possible for different use cases and projects.
+    - **Follow Data oriented design principles:** Many of the APIs and internal data is designed around being as hardware friendly as possible, especially regarding memory access and multi-threading. For example graphics and sound APIs are designed to be running on multiple threads as a default behavior.
+    - ~~**Take advantage of modern rendering architecture features**~~: Unfortunately, as a solo indie developer, this is a pretty hard thing to do. Also I'm using the lightweight sokol_gfx for each platform's backend, and it doesn't support the most modern GPU features and APIs, which is not bad at all for small/indie-ish projects. However, some useful and somewhat essential modern features like compute-shaders and multi-threaded command buffers are currently being done.
+    - ~~**Shared responsibility**~~: Currently, I'm the only programmer on this project and obviously it's my responsibility to do all the stuff. If the project grows and more developers want to join or contribute, then we will try to implement this more seriously.
+    - **Write for readability:** Well, In my opinion, C language helps a lot here (although it's very much debatable by C++ fans), but overall, we basically have functions and structs everywhere. There are no fancy syntaxes and idioms, there are no multiple abstraction layers that you have to jump to, naming and coding is kept consistent and number of source files are kept to minimum. 
+
+    So, to sum things up, _rizz_ is not meant to be a full featured engine, and using it is not going to be easy for people that are not interested or not familiar with the inner workings of game engines, there are much better hugely successful commercial and polished game engines for that purpose like [Unreal](https://www.unrealengine.com/en-US/) and [Unity](https://unity.com). 
+
+    Instead, _rizz_ targets low-level C/C++ programmers who are interested in small and manageable code bases and want to implement many game engine features and tools themselves and also like to have maximum control and flexibility in their projects. It basically provides the skeleton and main building blocks of multi-platform applications and presents extra functionality through plugins which are all optional.
+
+    # Architecture
+    ## Build
+    Much of the build instructions are described in [README.md](https://github.com/septag/rizz/blob/master/README.md#build). But I will describe more details on some build internals.
+
+    First of all, the project uses [_cmake_](https://cmake.org) as it's primary build system, so make sure you have the latest _cmake_ version installed on your development system.
+    
+    _rizz_ is divided into five main groups, which can be seen in the figure below:
+
+    ![Figure [build-chart]: build chart](rizz-basics-build-chart.png)
+    
+    - **sx (foundation library)**: built as static library. This is the foundation library that abstracts system level functionality, like threads, basic vector math, OS, memory management, etc. This library is almost linked with every other project directly. It's relationship with other modules is shown with straight arrow lines in figure #1.
+    - **rizz**: Can be built as stand-alone executable or static library based on wither we are building in BUNDLE mode or not. I will get to that later in this section. Other plugins and games usually depend on this module and uses it's various APIs for their purposes. The dotted lines in figure #1 indicates module depends on this but linking is not necessary.
+    - **plugins**: Additional plugins that provide extra functionality. These plugins can be either made by 3rdparty developers or included in the _rizz_ project. They usually link to _sx_ library and depends on _rizz_ APIs.
+    - **tools**: These are mostly python scripts and independent small tools that are integrated into project. Currently, one example of tools are build configuration scripts that facilitate _iOS_ and _android_ project preparation and build.
+    - **examples/games**: There are multiple examples included with the project. Also new apps or games goes into this category. They can either be built as stand-alone executable or dynamic libraries, depending on BUNDLE flag.
+
+    ### "Host" vs. "BUNDLE" build
+    **Host build**, which is the default mode on desktop OSes (Windows/Linux/MacOS), builds _rizz_ project as an executable host program. It hosts other plugins and the application itself as dynamic modules, so they can all be reloaded on change. This is default on desktop systems because it provides live C/C++ module reloading and is better suited for development setup.
+
+    ![Figure [build-host]: host build model](rizz-basics-host-model.png)
+    
+    **BUNDLE build**, which is the default mode on mobile OSes (android/iOS), builds _rizz_ and all plugins as static libraries, then links them to android's game dynamic library or iOS game bundle. This is mostly suitable for deployment, because it provides a single stand-alone executable. To enable this mode, you have to set `BUNDLE=1` and define bundle properties like the example below:
+    
+    ```
+    cmake .. -DBUNDLE=1 -DBUNDLE_TARGET_NAME=your_project -DBUNDLE_PLUGINS="imgui;sound"
+    ```
+    
+    In this example, we set our project (name is `your_project`) to build as _BUNDLE_ mode and indicates that the project requires _imgui_ and _sound_ plugins.
+
+    ![Figure [build-bundle]: _BUNDLE_ build model](rizz-basics-bundle-model.png)
+    
+    ### pre-built binary tools
+    There are bunch of command line utilities included in the project as a pre-built binary. Of course they are all open source projects and can be built by fetching their source code independently. But I included their binaries for convenience and not to clutter the project. These tools reside in `tools/${platform}` directory.
+
+    - **[glslcc](https://github.com/septag/glslcc):** GLSL cross-compiler tool. All the shaders are built with this tool.
+    - **[atlasc](https://github.com/septag/atlasc):** Builds atlas texture from a bunch of input images. In case you are using _sprite_ feature, it can be a useful tool to put multiple images into a bigger atlas and make sprite meshes from them.
+    - **[basisu](https://github.com/BinomialLLC/basis_universal):** Basis Universal GPU Texture Codec. This tool can be used to create *.basis* texture files that the engine supports. *.basis* textures are super small and can be transcoded to any native compression format on demand. So they are almost a perfect choice for multiplatform image deployment.
+
+    ### ISPC (high-level SIMD programming)
+    _rizz_ provides a [cmake module](https://github.com/septag/rizz/blob/master/cmake/ispc.cmake) to integrate ispc files into your projects. ispc compiler is not included in the project, so you have to download it.
+
+    The cmake module will try to find the compiler binary if it's in the PATH, if it's not, you should provide the path to cmake with ISPC_PATH variable: 
+
+    ```
+    cmake .. -DISPC_PATH=/path/to/ispc 
+    ```
+
+    ISPC files can be added to project with `ispc_target_add_files` function. Also there are other parameters that are described in the module in more detail. Here's an example:
+
+    ```py
+    # set global variables
+    set(ISPC_OUTPUT_DIRECTORY /path/to/object/files)
+    set(ISPC_INCLUDE_DIRS /path/to/ispc/includes)
+    set_source_files_properties(test.ispc PROPERTIES ISPC_COMPILE_DEFINITIONS "USE_METHOD_2")
+    ispc_target_add_files(target-name test.ispc)
+    ```
+
+    In this example, we have added our `test.ispc` to the project *(target-name)*, the source will have *USE_METHOD_2* definition. The output directory of compiled object files will be in ISPC_OUTPUT_DIRECTORY variable and include search directory extracted from ISPC_INCLUDE_DIRS variable.
+
+    ### Cross build scripts
+
+    There are currently two python build scripts that facilitate cross builds:
+
+    - **[android.py](https://github.com/septag/rizz/blob/master/scripts/build-tools/android.py)**: Android development is actually very frustrating, so I provided a python scripts that configures the project from ground up, builds, makes APK and deploys it on the device for testing. more detailed documentation is provided inside the file.
+    - **[ios.py](https://github.com/septag/rizz/blob/master/scripts/build-tools/ios.py)**: This scripts essentially sets up an iOS from ground up, provides placeholder plist files, icons and launch images and Xcode project. After that you can just replace the images, edit the plist, and build or debug your app in xcode.
+
+    ## Memory management
+    Every dynamic memory allocation in _rizz_ framework is passed through custom allocator provided by the framework itself. So it is recommended that you never use _malloc_ or C++ _new_ operator, unless it's using the allocated memory from the custom allocators like the example below:
+
+    ```cpp
+    void* buffer = sx_malloc(the_core->heap_alloc(), sizeof(MyClass));
+    // construction
+    MyClass* clz = new(buffer) MyClass();
+    // destruction
+    clz->~MyClass();
+    sx_free(the_core->heap_alloc(), buffer);
+    ```
+
+    There are multiple functions that facilitate memory allocators, along with various allocators provided by the framework. 
+
+    To allocate memory, there are multiple macros that help you with this, and they all require custom allocator pointer, which I will describe below. See [sx/allocator.h](https://github.com/septag/rizz/blob/master/include/sx/allocator.h) for details. Overall, you should use `sx_malloc`/`sx_free`/`sx_realloc` for normal allocations, and `sx_aligned_malloc`/`sx_aligned_free`/`sx_aligned_realloc` for aligned allocations.
+
+    Here are built-in allocators, available through **core** API:
+    - **heap_alloc()**: Thread-safe general allocator, detects leaks in _DEBUG_ mode. Otherwise, it's essentially malloc.
+    - **alloc(id)**: Gets _tagged_ allocators. Every allocation can be tagged and monitored with imgui plugin's *memory_debugger*. For example, graphics, sound and physics can go through different allocators so you can trace each subsystem memory. To see current pre-defined Ids, see `rizz_mem_id` in [core.h](https://github.com/septag/rizz/blob/master/include/rizz/core.h)
+
+    ### Temp allocations
+    Temp allocators are a bit tricky. They are simple linear based allocators, which is very fast with minimal defragmentation. Also, they are multi-threaded if you use them in the framework's job dispatcher threads.  
+
+    To use temp allocations, you should use **tmp_alloc_push** and **tmp_alloc_pop** in stack like order. **tmp_alloc_push** pushes new item in temp allocator stack, and **tmp_alloc_pop** pops it back. The reason behind this is that the amount of temp memory is limited (5mb default) and can be set on app config, so we have to reuse the memory to prevent buffer overflow. 
+    
+    Another important note is that you can not use memory across frames. On the start of each frame, all temp allocators will be reset.
+
+    The tricky part is that you have to be careful to call _pop_ for every _push_ in your functions, and also never reuse the memory you allocated after the _pop_ call.
+
+    Here's an example of temp allocator usage:
+
+    ```c
+    static rizz_api_core* the_core;     // core API
+
+    static void foo()
+    {
+        const sx_alloc* alloc = the_core->tmp_alloc_push();
+        void* buffer = sx_malloc(alloc, 1024);     
+        // use buffer and get done with it
+        the_core->tmp_alloc_pop();
+    }
+
+    int main()
+    {
+        const sx_alloc* alloc = the_core->tmp_alloc_push();
+        void* buffer = sx_malloc(alloc, 4096);
+        while (!quit) {
+            foo();
+        }
+        the_core->tmp_alloc_pop();  
+        return 0;
+    }
+    ```    
+    ## Systems
+    _rizz_ contains several sub-systems, they are kept minimal and extra sub-systems will are presented out of rizz library as plugins. Each sub-system will likely have an API interface, they are essentially _structs_ with function pointers:
+
+    ```
+    typedef struct rizz_api_core {
+        void (*get_mem_info)(rizz_mem_info* info);
+    } rizz_api_core;
+    ```
+
+    These APIs can be fetched in main entry of the plugin/app with `get_api` function, see examples to see it's usage in the program. It is very much like the design described in _OurMachinery_.
+
+    All the sub-systems and their relationships are shown in the figure below:
+
+    ![Figure [systems]: sub-systems](rizz-basics-systems.png)
+
+    - **core (rizz_api_core)**: core handles many primary functionality, like job dispatching, memory allocators, logging, profiling, etc. Almost all of other modules and sub-systems use this module.
+    - **app (rizz_api_app)**: This is the main entry of the program, creates the app and it's window, handles message loop, GPU device contexts and stuff like that. This process is invisible to user, but there is an API which you can query or control certain aspects of the program, like getting window dimensions, showing mouse pointer, quit the application and functions related to the main app.
+    - **graphics (rizz_api_gfx)**: This is the main graphic subsystem and provides lowest level of functionality for graphics, which it's API, you can submit commands to GPU. It also registers loading several graphic assets with the asset manager.
+    - **asset (rizz_api_asset)**: Handles managing and loading assets and hot-reloads assets on devel mode, it works asynchronously by default, however, you can set a flag and load assets in blocking mode. We will get to that later in this document.
+    - **plugin (rizz_api_plugin)**: Plugin system, handles and reloads all plugins. This include the game module itself.
+    - **reflection (rizz_api_refl)**: There is a simple reflection sub-system that you can register your data types with it and enumerate them later.
+
+    There are also external libraries that are independent from the _rizz_ and you can use them wherever in your code. The main one is **sx**, the foundation library that I described earlier. It is linked to all child projects by default.
+
+    ## Plugins
+    Plugins are common dynamic library (.so/.dylib/.dll) files that have specific descriptor functions that can be detected by _rizz_ plugin system. I will describe in more detail how to implement new plugins, in the *Basic Usage* section. Basically, the main game or app is just another _special_ plugin and almost behaves like one. Also, all plugins are auto reloaded when they are being overwritten on disk in non _BUNDLE_ mode. 
+
+    Plugins have various events which is triggered by the host (_rizz_) through a callback function:
+    - **STEP**: This is essentially where _update_ happens, and is triggered on every frame.
+    - **INIT**: Triggers the _first_ time the plugin is initialized. This is where you can initialize your objects.
+    - **LOAD**: Triggers on plugin reloads. The host is running, but plugin is overwritten, so this event is triggered to do any house keeping or renewing lost stuff during reload.
+    - **UNLOAD**: Triggers right before plugin wants to reload. _LOAD_ event complements this.
+    - **SHUTDOWN**: Triggers when host (_rizz_) and the application is being shutdown completely. You can do your main cleanup here.
+
+    The plugin system accepts a base directory where all of the plugins should be located. Then the game or other plugins define the plugins they would need. After this, a dependency graph will be created in the plugin system in order to update, load and unload each plugin in order considering their parent/child relationship. Then, the main loop will update game/application after all plugins are updated.
+
+    ![Figure [plugins]: Plugin dependency graph example](rizz-basics-plugins.png)
+
+    As you can see in the example above, our game uses _sound_, _input_ and _sprite_ plugins, and every one of those plugins, depend on _imgui_ for their debugging functionality, so the blue squares shows plugin dependency graph. When _update_ and _init_ events happen, they are triggered by the host and goes from top to bottom of the hierarchy. But _shutdown_ event will execute in reverse order and starts with the game itself then goes up to the hierarchy.
+
+    Plugins can also receive window/application events from the host. I will demonstrate this in _Basic Usage_ section.
+
+    ## Job dispatcher
+    Job dispatcher in _rizz_ framework is *fiber based* 
+    ## Asset manager
+    ## Graphics
+    ## Profiling
+
+    # Basic Usage
+    ## How to create your first application
+    ### Prepare the build
+    ### Hello world
+    ### Using application events
+    ### Notes on live code reloading
+
+    ## How to write plugins
+    ## How to use graphics API
+    ## How to write shaders
+    ## How to write tools and developer UI
+    ## How to prepare mobile builds
+    ## Supported asset types
+
+    # Coding Style Guide
+    ## Directory structure and files
+    ## Naming
+    ## Formatting
+</body>
+
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace;}</style><script src="../../js/markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
+

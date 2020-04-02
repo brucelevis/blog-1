@@ -171,19 +171,19 @@ As you can see, the whole external lib branch is eliminited. And here's a brief 
 | SUM        |  1265    | SUM           | 35     |
 
 As you can see, I have roughly trimmed down about 1230 KLOC from the project by switching to lighter and more specific C libs with much less 3rdparty dependencies.
-This is a huge amount of code considering that my whole project (without 3rdparties), the engine (termite) and the game itself was about 80 KLOC! Now Imagine how much the code will be lighter and faster to build and maintain on multiple platforms. This is also more important for open-source projects where less code and dependencies are much prefered for the users.
+This is a huge amount of code considering that my whole project (without 3rdparties), the engine (termite) and the game itself was about 80 KLOC! Now Imagine how much the code will be lighter and faster to build and maintain on multiple platforms. This is also more important for open-source projects where less code and dependencies are much preferred for the users.
 
 # Iteration times
 One of the things that really annoyed me in *fisherboy* was slow iteration times, and my main focus on the next thing would be lowering development iteration times:
 
 ## Assets
 Assets (images, spritesheets, sounds, ...) were using hot-reloading in *fisherboy* for development builds only. It was a nice little feature but didn't have much impact on the speed of development, because we had one artist and me as a programmer. When the artist finished some art, she would put the PNGs on the server so I could integrate them inside the engine. But the problem was that many art assets where in form of atlases, and we were using the [TexturePacker](https://www.codeandweb.com/texturepacker) tool to make those atlases. So I had to fetch the art and pack them into sheets for the first time and save the *TexturePacker* atlas file.  
-Now when any art is changed, I had to run the TexturePacker command-line tool on the atlas file again to export final image to the engine. Creating, modifing and tweaking new atlases was really time consuming for me. And because I did it all on my system, our artist couldn't use the hot-reload feature on assets on her own system.  
+Now when any art is changed, I had to run the TexturePacker command-line tool on the atlas file again to export final image to the engine. Creating, modifying and tweaking new atlases was really time consuming for me. And because I did it all on my system, our artist couldn't use the hot-reload feature on assets on her own system.  
 Well, some asset types like sounds where benefiting from hot-reload, but that wasn't that much to be considered useful.  
 I had some scripts to auto-make baking assets to mobile platform, But it was just happening on android deployment and didn't help that much in everyday development on windows.  
 
 What I'm planning to do in the future, is to streamline this part of the pipeline and put it all in the hands of the artist with some helping tools.   
-First of all there should be some form of build database file that holds build information for each asset. For example, we should be able to assign multiple PNG files to an atlas, set it up with minimal effort from the user, and save it to the database. Everytime the artist changes a PNG on the local system, it should detect the change, fetch the build information from the database, make the atlas and push it to asset server. The other development machines (which is mine) should automatically fetch the atlas and put it inside the game asset directory, so the runtime will detect the changes and reload the file.  
+First of all there should be some form of build database file that holds build information for each asset. For example, we should be able to assign multiple PNG files to an atlas, set it up with minimal effort from the user, and save it to the database. Every time the artist changes a PNG on the local system, it should detect the change, fetch the build information from the database, make the atlas and push it to asset server. The other development machines (which is mine) should automatically fetch the atlas and put it inside the game asset directory, so the runtime will detect the changes and reload the file.  
 
 ## Shaders
 In *fisherboy*, shaders were the only assets that didn't have hot-reloading, because of it's complexity and lack of reflection information. This was not a very annoying problem for our project, because it was a 2D game and we didn't have that much shaders. But shader hot-reloading can be a really important feature when you are working on a bigger or a 3D project. It also helps more to make the game look better, because you can iterate on shaders fast and don't re-run the game each time you tweak a function or something.
@@ -229,7 +229,7 @@ register_component(Physics, update_physics, ..);
 
 ~~~~
 
-This is similiar to many other *ecs* systems in it's simple form. My system didn't have dependency graphs and stuff like that for updates, It just had this multiple orders of update, like *PreUpdate*, *Update*, *PostUpdate*, *FixedUpdate* callbacks where user could override for each component type. This caused a bit of problems and headaches, especially in places where component updates relied on each other, and also conflicts with physics system which had it's own update. 
+This is similar to many other *ecs* systems in it's simple form. My system didn't have dependency graphs and stuff like that for updates, It just had this multiple orders of update, like *PreUpdate*, *Update*, *PostUpdate*, *FixedUpdate* callbacks where user could override for each component type. This caused a bit of problems and headaches, especially in places where component updates relied on each other, and also conflicts with physics system which had it's own update. 
 
 The problem was that I actually followed a *trend* which was ECS blindly, and I didn't see my problem as what it actually was.  
 
