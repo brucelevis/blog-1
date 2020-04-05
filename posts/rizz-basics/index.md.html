@@ -196,31 +196,336 @@
 
     The plugin system accepts a base directory where all of the plugins should be located. Then the game or other plugins define the plugins they would need. After this, a dependency graph will be created in the plugin system in order to update, load and unload each plugin in order considering their parent/child relationship. Then, the main loop will update game/application after all plugins are updated.
 
-    ![Figure [plugins]: Plugin dependency graph example](rizz-basics-plugins.png)
+    ![Figure [plugins]: Plugin dependency graph example. Order of execution is shown with arrows for each event](rizz-basics-plugins.png)
 
     As you can see in the example above, our game uses _sound_, _input_ and _sprite_ plugins, and every one of those plugins, depend on _imgui_ for their debugging functionality, so the blue squares shows plugin dependency graph. When _update_ and _init_ events happen, they are triggered by the host and goes from top to bottom of the hierarchy. But _shutdown_ event will execute in reverse order and starts with the game itself then goes up to the hierarchy.
 
-    Plugins can also receive window/application events from the host. I will demonstrate this in _Basic Usage_ section.
+    ### Writing plugins
+    To make plugins for _rizz_, you can start by creating an entry-point source file and implement required functions for it. There are macros to facilitate the creation of such functions:
+
+    - `rizz_plugin_implement_info(PLUGIN_NAME, VERSION, DESCRIPTION, DEPENDENCIES, NUMBER_OF_DEPENDENCIES)`: This basically defines the plugin info function. The host, calls this function to gather essential information about the plugin, such as dependencies and version info.
+        - PLUGIN_NAME: name of the plugin. it should be without double quotes, with no spaces and actually the name of the plugin's root source folder for convenience.
+        - VERSION: version integer. The format is like 'MNNF', 'M' is for major version, 'NN' is for minor version and F is for fix updates. (example: 1012 = version 1.1.2)
+        - DESCRIPTION: a description string 
+        - DEPENDENCIES: a string array of the names of plugin dependencies. 
+        - NUMBER_OF_DEPENDENCIES: number of items in the array
+    - `rizz_plugin_decl_main(PLUGIN_NAME, PLUGIN_PARAM_NAME, EVENT_PARAM_NAME)`: This is the main loop for the plugin which receives program events such as INIT and SHUTDOWN (as described above). 
+    - `rizz_plugin_decl_event_handler(PLUGIN_NAME, EVENT_PARAM_NAME)`: (optional) This is addtional event handler that receives window/app level events, such as SUSPEND/MOUSE/KEYBOARD/RESIZE/etc in case your plugin needs them. 
+
+    Here's an example of the minimal entry points for a plugin named 'box2d':
+    
+    ```cpp
+    typedef struct box2d_api {
+        b2World* (*createWorld)(void);
+        void (*destroyWorld)(b2World* world);
+    } box2d_api;
+
+    static box2d_api the__box2d;
+
+    rizz_plugin_decl_main(box2d, plugin, e)
+    {
+        // 'plugin' = rizz_plugin*
+        // 'e' = rizz_plugin_event
+        switch (e) {
+            case RIZZ_PLUGIN_EVENT_STEP:
+                updateBox2d();
+                break;
+            case RIZZ_PLUGIN_EVENT_INIT:
+                // Initialize APIs
+                the_plugin = plugin->api;
+                the_core = plugin->api->get_api(RIZZ_API_CORE, 0);
+                the_imgui = the_plugin->get_api_byname("imgui", 0);
+
+                if (!initBox2d()) {
+                    return -1;
+                }
+
+                // Inject physics API into the engine. You can inject multiple APIs
+                plugin->api->inject_api("box2d", 0, &the__box2d);
+                break;
+
+            case RIZZ_PLUGIN_EVENT_SHUTDOWN:
+                plugin->api->remove_api("box2d", 0);
+                releaseBox2d();
+                break;
+        }
+
+        return 0;   // success
+    }
+
+    
+    rizz_plugin_decl_event_handler(box2d, e)
+    {
+        // e = const rizz_app_event* 
+        if (e->type == RIZZ_APP_EVENTTYPE_UPDATE_APIS) {
+            // refresh the 'imgui' plugin API, because it is not built-in and maybe reloaded while the program is running
+            the_imgui = the_plugin->get_api_byname("imgui", 0);
+        }
+    }
+
+    static const char* box2d_deps[] = { "imgui" };
+    rizz_plugin_implement_info(box2d, 1000, "box2d physics plugin", box2d_deps, 1);
+    ```
+
+    #### Main program/game
+    Games and Programs hosted by _rizz_ are actually another type of plugins. They need the same boilerplate code that the plugin needs, with the addition of *game config* function. The function can be defined by using `rizz_gamd_decl_config` helper macro:
+
+    ```
+    rizz_game_decl_config(conf)
+    {
+        // conf = rizz_config*
+        // leave any field to initialize them with default values. see rizz_config struct
+        conf->app_name = "my_game";
+        conf->app_version = 1000;
+        conf->app_title = "My First Game!";
+        conf->window_width = 800;
+        conf->window_height = 600;
+        // fill plugins array with the name of the plugins that your program requires
+        conf->plugins[0] = "imgui"; 
+    }
+    ```
+
+    #### Deployment 
+    Recommended deployment method for plugins is obviously open-source and on GIT repos.First, consider naming your plugins as the same folder that you put their source code in. So for example if your plugin name is "box2d", then name your source folder to "box2d". Secondly, always put `CMakeLists.txt` file on the root folder of your plugin source folder, so the build system can find it without problems.
+
+    You can use the little bash command line script `plugin.sh` to add and remove external plugins to your rizz source repo. It works buy creating a git submodule from the url that you provide, in the `src/[your_plugin_name]` directory, then adds the name to `plugins` text file for the *cmake* to add it to build tree. Example:
+
+    ```
+    ./plugin.sh add box2d git@github.com:septag/box2d.git 
+    ``` 
+
+    To remove the box2d, you can run:
+
+    ```
+    ./plugin.sh remove box2d
+    ```
+
+    After this, all other programs and plugins will be able to recognize a plugin named "box2d" and use it's APIs or whatever.
+
+    ### Live C/C++ reloading
+    [TODO]
 
     ## Job dispatcher
-    Job dispatcher in _rizz_ framework is *fiber based* 
+    Job dispatcher in _rizz_ framework is *fiber based*. This system has it's own ups and downs. The major reason that it's chosen for _rizz_, is it's *ease of use* and *nobel handling of task dependencies and task stealing*. 
+    
+    It works by creating a pool of threads and dispatch tasks to them in form of *fibers*. *Fiber* is a system-level construct and is a set of saved CPU registers and a stack memory. It happens in user-space, so it's pretty fast to switch between them at runtime. For more details, read this [slides](http://twvideo01.ubm-us.net/o1/vault/gdc2015/presentations/Gyrling_Christian_Parallelizing_The_Naughty.pdf) from "Parallelizing the Naughty Dog engine using fibers" presentation. 
+
+    With this system, there is no need to define dependency graph before spawing them. User can easily spawn a job and in the middle of it, spawn new jobs and wait for them, the job system will handle it gracefully by itself and keep all threads busy (including the "waiting" thread).
+
+    ```cpp
+    static void my_raycast_callback(int start, int end, int thrd_index, void* user)
+    {
+        my_raycast_data* data = (my_raycast_data*)user;
+        // raycast the object with the scene
+        for (int i = start; i < end; i++) {
+            raycast(data->cells[i], data->obj);
+        }
+    }
+
+    static void my_job_callback(int start, int end, int thrd_index, void* user)
+    {
+        // start = first index of dispatched sub-items
+        // end = end index of dispatched sub-items
+        // thrd_index = for your information (0..max_threads-1)
+        // user = user_data that is passed on dispatch
+
+        my_objects* objs = (my_objects*)user;
+        for (int i = start; i < end; i++) {
+            my_raycast_data = {.obj = objs[i], .cells = my_scene->cells};
+            sx_job_t raycast_job = the_core->job_dispatch(my_scene->num_cells, my_raycast_callback, &my_raycast_data, SX_JOB_PRIORITY_NORMAL, 0);
+            the_core->job_wait_and_del(raycast_job);
+            update_object(objs[i]);
+        }
+    }
+
+    my_objects objs[16];
+    sx_job_t myjob = the_core->job_dispatch(16, my_job_callback, objs, SX_JOB_PRIORITY_NORMAL, 0);
+    // do some stuff
+    the_core->job_wait_and_del(myjob);  // waits for the job to and deletes the handle when finished (meanwhile can run tasks)
+    ```
+
+    In this example, user dispatches an "update objects" job, providing the dispatcher with number of total objects, the system will automatically divide them up to the total (eligable, see 'tags') threads and execute them by calling `my_job_callback`. The callback receives a range index which is between 0 and count of total jobs given in the arguments. `thrd_index` is a hint index (range is between 0..num_threads-1) for the user to fetch extra thread-local data and avoid TLS fetching. You will notice that inside the `my_job_callback`, there is another _raycast_ job spawned, then it waits for the _raycast_ to finish and continue. The current job will be removed from the worker thread and replaced by raycast jobs until it's finished. In this system, user doesn't need to allocate and manage *job-data* because they are stored in the fiber's stack, and also the system is much easier for higher-level programmers to use it.
+
+    For more information about the API, checkout the comments in header file `include/sx/jobs.h`. 
+
+    But please **note** that, _rizz_ basically wraps the base _sx_ library's job system. So, the interface is the same, but you should use _rizz_ core api instead of the _sx_ one. Internally, it creates a job-system context with the parameters that are set in `rizz_config` structure (`job_num_threads`, `job_max_fibers`, `job_stack_size`). In addition to this, it saves extra data for each thread to be accessed by memory manager, log system and graphics sub-system. You can always create an additional job-system context in your program using *sx* API, however, you must handle all things by yourself, for example, you can not issue log calls, graphics APIs or get temp allocations inside these threads anymore. Basically, you can't use any multi-threaded API from the _rizz_ in your additional job-system.
+
+    But this system, isn't without it's drawbacks and conveats:
+
+    **Multi-threading primitives issue**: Using system mutexes are tricky and possibly dangerous. You can not lock a mutex and _wait_ for a new task before unlocking it. Here's an example:
+    
+    ```cpp
+    static void my_task(int start, int end, int thrd_index, void* user)
+    {
+        void* additional_data = sx_tls_get();
+        sx_mutex_lock(&mtx);
+        the_core->job_wait_and_del(myjob); // possible thread switch after this
+        sx_mutex_unlock(&mtx);
+        // note: 'additional_data' maybe from another thread now!
+    }
+    ```
+
+    In this scenario, on `job_wait_and_del` call, the current running fiber will be replaced by another one and may end up running in another thread after *wait* is continued. This causes the mutex being lost between threads and causes many syncing problems. This also can happen to TLS variables. The current workaround is either the user have the knowledge about this and consider this in his implementation, or use *spinlocks* or use `the_core->job_thread_index()` function to get the index index and update the per-thread data.
+
+    **Becareful of multi-threaded framework APIs**: The irony here is that any thread-safe _rizz_ api would be problematic in a case you are not careful and put them around another `wait` operation. Example:
+    
+    ```cpp
+    the_core->tmp_alloc_push()
+    // do some stuff
+    the_core->job_wait_and_del(myjob); //possible thread switch after this
+    the_core->tmp_alloc_pop(); // ERROR
+    ```
+
+    In this example, because the *tmp_alloc* functions work with TLS data internally, it is possible that after `wait`, another thread takes the fiber and continue the execution, but *tmp_alloc_pop* assumed that we are on the same thread. Which is wrong. Proper implementation would be:
+
+    ```cpp
+    the_core->tmp_alloc_push()
+    // do some stuff
+    the_core->tmp_alloc_pop();
+    the_core->job_wait_and_del(myjob); //possible thread switch after this
+    the_core->tmp_alloc_push();
+    // do some other stuff
+    the_core->tmp_alloc_pop(); 
+    ``` 
+
+    So to summerize, you just have to be careful about the spots that you "`wait`" for a task to finish. Because that are the points that fibers get switched and may end up running in another thread.
+
     ## Asset manager
+    Asset manager in _rizz_ is designed to be flexible so the 3rdparty user can extend asset types and add extra asset formats to the system.
+
+    ### Design
+    Internally, it works by issuing file requests to the *virtual file-system* (`src/rizz/vfs.c`) which is an async call by default. After the file is loaded from the IO, it will load the actual asset data by spawining a new job for the job-system. You can see the overview of the design in the image below:
+
+    ![Figure [asset-design]: asset system data flow (from left to right): load process](rizz-basics-asset-design.png)
+
+    - When a `load` request comes in from the API, the *asset manager* returns a newly created handle back to the user, so it can be saved. But the handle points to a temporary *async* object, which is just a placeholder and not the actual asset being loaded. 
+    - Internally, *asset manager* requests the *virtual file-system* the file data, which runs in async mode (for example, for files on disk, it loads them in another thread). 
+    - Loaded data, will be returned to the asset system and it goes into a *prepare* process, which can be anything like for example creating graphics objects for a texture and allocate it's memory.
+    - After data is prepared, it dispatches a job (through the _rizz_ job-system), which calls *load* process on each asset. Here, the implementation can use the prepared data from the previous stage to actually parse or load the asset into the memory.
+    - All the results will be passed back to the *asset-manager* in the main thread and run the *finalize* process, so the implementation can cleanup un-needed memory, finalize device objects or whatever. At this point, the handle will now point to the actual asset.
+
+    ### Multi-threading
+    Asset manager is partially multi-threaded, because the core of it uses async operations internally, it is not designed for the whole API to be used in multiple threads. Here are some rules that you can use it in a multi-threaded environment:
+
+    - Load all your assets in the main thread because it's an async operation anyway.
+    - You can only use get data specific function (`the_asset->obj_threadsafe(asset)`) inside worker threads. *note* that `the_asset->obj(asset)` is cheaper than the thread-safe version
+    - Load calls also can be performed while other threads are fetching previously loaded asset data 
+    - Unload calls is *NOT* permitted while working threads are using the `obj_threadsafe` call
+    - Never use asset objects across multiple frames inside worker-threads, because they may be invalidated by the main-thread
+
+    So basically, the usage pattern is always load your stuff in main-thread before any updates or running tasks. In the update loop, fetch assets or whatever in the main or other threads. When cleaning up the scene, make sure, the game update loop or tasks that are using those assets are not running. 
+    
+    The reason behind this is simple. It's because the asset database is global and it's not worth it to lock everything constantly just to make it super thread-safe. So we assume that the database can only be modified in a single-thread which are basically the `load` and `unload` calls. But the exception here is that when you pass an asset handle to a worker thread, it can work, even if other assets are being loaded, but it's your responsibility to make sure that the handle is not unloaded while other threads are using it.
+
+    ### Implementing new asset types
+    Adding new asset types can be acheived by implementing `rizz_asset_callback` functions and pass them to `the_core->register_asset_type` function:
+
+    ```cpp
+    the_asset->register_asset_type("my_asset", (rizz_asset_callbacks) {
+        .on_prepare = my_asset_on_prepare,
+        .on_load = my_asset_on_load,
+        .on_finalize = my_asset_on_finalize,
+        .on_reload = my_asset_on_reload,
+        .on_release = my_asset_on_release }, 
+        "my_asset_load_params_struct", sizeof(my_asset_load_params_struct),
+        my_asset_failed_obj, my_asset_async_obj, my_asset_forced_flags);
+    ```
+
+    The first argument is your asset type name. You can load your asset by specifiying the name of it (`the_core->load("my_asset", filepath, ...)`). Examples are built-in types like "texture", "font", "atlas", "sound", etc. You must choose a unique name for each asset type or the system will complain upon registration. 
+
+    The second argument is callbacks that are used to implement loading, unloading and reloading your asset type:
+    - **on_prepare**: This callbacks runs on the same thread as asset-manager and is used to prepare any objects or memory buffers to fill asset data (see Figure 6).
+    - **on_load**: Runs on job threads. The prepared data is passed with `rizz_asset_load_data` to this function for loading (or parsing) the actual asset data. You should put any time consuming loading code here. For example, decoding JPEG image or decoding MP3 samples. (see Figure 6)
+    - **on_finalize**: Runs on the same thread as asset-manager. This is a cleanup/finalize function where you can cleanup any temporary data previously allocated by prepare or load stages, or finalize device objects. After this callback, the actual data behind the asset handle will be replaced with the new asset. (see Figure 6)
+    - **on_reload**: Here's how the reload process is being done: when the virtual file-system notifies the asset-manager that a specific asset is changed on disk or whatever, the new temporary asset will be loaded in blocking mode, by executing all the previous callbacks in a row, after sucessfull load, it will unload the current asset and replace it with the temporary one. But the catch here is that some objects may derive their data from the asset that is reloaded. What we need to do is to provide a custom mechanism, so we can update all possible dependent objects with the new asset. 
+    - **on_release**: This is also called in the same thread as asset-manager, which should unload the asset data and any device objects connected to it.
+
+    As you can see in the figure 6, all the parts in orange, needs to be done by an external source through the callbacks, in order to be able to successfully load an asset. There are built-in examples of how it is implemented in `graphics.c` for texture/image types.
+
+    The third and fourth parameters are the name and the size of the load struct that is passed to `the_asset->load` API call. This can be any custom types that you create for your implementation. For example, built-in `rizz_texture_load_params` parameter is used for loading "texture" types and can define the first MIP index, desired pixel format and so on.
+
+    The fifth and sixth parameters can be static objects, created and saved by a specific asset implementation, to provide asset-manager with default objects, like when it's still loading (async_obj) and when it fails to load (failed_obj). As an example, you can provide a single 1x1 purple texture for textures that fails to load, and a 1x1 white texture for textures that are not fully loaded yet.
+
+    The seventh and final parameter is *forced_flags*, which can be a combination of `rizz_asset_load_flags`. If you define any flags here, they will be added to the load flags passed to `the_asset->load` function. For example, _rizz_ always loads shaders in blocking mode, so no matter what, the *RIZZ_ASSET_LOAD_FLAG_WAIT_ON_LOAD* flag should always be added to the loading flags.
+
+    ### Built-in asset types
+    [TODO]
+
     ## Graphics
+    The graphics subsystem is rather low-level. Providing the user with a thin layer of graphics API abstraction, leaving any graphics technique implementations to the user.
+
+    It uses [sokol_gfx](https://github.com/floooh/sokol) as it's graphics backend. Uses different APIs under different platforms:
+
+    - Windows: D3d11
+    - Linux: OpenGL 3.3
+    - MacOS: Metal
+    - iOS: Metal
+    - Android: OpenGL-ES 3
+    - RaspberryPI: OpenGL-ES 2
+
+    Graphics subsystem, has two modes of drawing APIs. *Immediate mode* and *Staged* mode. *Immediate mode* is somehow direct calls to device graphics backend API. It is translated immediately to underlying graphics API and executed. For example, running `the_gfx->imm.draw`, calls D3d11::DrawPrimitives directly.
+
+    The *Staged* mode has a different behavior. First of all, it is multi-threaded. And it Uses the concept of *stages* to group draw calls and execute them in the order of their dependencies. Before drawing the scene, you create a set of *stages* (`the_gfx->stage_register`), for each stage, you define a name and the *parent_stage*, which is the stage the must always be done before the current stage. Then you can begin drawing by putting your draw calls between `begin` and `end` calls:
+
+    ```cpp
+    rizz_api_gfx_draw* api = &the_gfx->staged;
+    api->begin(stage);
+    api->begin_default_pass(&pass_action, 800, 600);
+    api->apply_viewport(0, 0, 800, 600);
+    // issue other API calls...
+    api->draw(0, 100, 1);
+    api->end();
+    ```
+
+    All graphics commands will be queued in command-lists, but not submitted to the backend API immediately. After the frame is finished, all of them are sorted by exeution order and their stage dependencies, and then submitted to the graphics backend API in bulk! This decision is made to lower the latency of the drawing calls. 
+
+    ![Figure [stages-example]: A simple example of stages and their dependencies (showed with arrows), the execution order of the calls will be from left to right](rizz-basics-stages-example.png)
+
+    All of the *staged* draw API functions (`the_gfx->staged`), can be called in job-system's worker threads. However, there are certain rules that you should follow:
+
+    - As said above in the [Job dispatcher notes](#architecture/jobdispatcher), you should be careful not to issue any `wait` operation between graphic calls. Always end the calls with `end_stage` before waiting for a child-job to finish.
+    - Do not destroy graphics objects during rendering work (in case you are rendering in worker threads). So basically, it is your responsibility to cleanup graphics objects only when they are not used.
+    
+    ### Advanced usage and more on Multi-threading
+    By default, all queued commands in the *staged* mode will be flushed and executed at the end of the frame automatically. We could run queued commands at the begining of the next frame, like "do rendering in another thread" approach, and make the driver do it's stuff while the next frame is being updated. but I wanted to keep things simple by flushing them at the end of the current frame, this also allows more low latency drawing, because the draw calls are drawn on the same frame as they are called.
+
+    However, For more complex scenes, early draw command submission can be implemented with the addition of two functions `the_gfx->present_commands` and `the_gfx->commit_commands`.
+    You can implement your pipeline, like the model shown below. With this approach, you can fetch the command-queues in the middle of the frame (`the_gfx->present_commands`) and submit them to the backend graphics API with `the_gfx->commit_commands` function, thus keeping the GPU busy while you are still doing rendering/culling or whatever. 
+    
+    The catch here is to be careful about the `the_gfx->present_commands` call. It should be called in the main thread and without any worker threads submiting graphic commands in the background. Also, for `the_gfx->commit_commands`, because you are issuing it in the middle of frame, the full pipeline may not be met, so it does a validation check and see if you have already drawn all the stages that are dependent to each other.
+
+    Here's an example of how you can implement this functionality:
+
+    ![Figure [draw-mt]: Example of a multi-threading scenario and commiting command-queues in the middle of the frame](rizz-basics-draw-mt.png)
+
+    As you can see in the image below, **Present** (`the_gfx->presend_commands`) call should only happen when you are not drawing on job threads, after a successful present call, you can safely call **Commit** (`the_gfx->commit_commands`) even if other threads are drawing. Because internally, the graphics system, stores two command-queue buffers, and switches between them after you call present. Basically, one buffer is meant to be fed by draw commands, another buffer is meant to sort and submit calls to the GPU. **Note** that on "Frame end", both command-queue buffers (feed and render) will be flushed and submitted to the GPU.
+
+    Additionally, you can debug all draw calls and other graphics resources with `rizz_api_imgui_extra->graphics_debugger(the_gfx->trace_info())` (*imgui* plugin) function call.
+
+    ### Shaders
+    [TODO]
+
+
     ## Profiling
+    Currently, the profiling tools are pretty basic and minimal. It's using [Remotery](https://github.com/Celtoys/Remotery) backend. I may change it to a more advanced and cutomizable profiling system in case if such functionality is really needed.
 
-    # Basic Usage
-    ## How to create your first application
-    ### Prepare the build
-    ### Hello world
-    ### Using application events
-    ### Notes on live code reloading
+    So, basically there are two main macros that is used to sample parts of the code. `rizz_profile_begin` and `rizz_profile_end`. The samples will be sent to the profiler's http server, and can be viewed by opening `index.html` in `3rdparty/remotery/vis` directory.
 
-    ## How to write plugins
-    ## How to use graphics API
-    ## How to write shaders
-    ## How to write tools and developer UI
-    ## How to prepare mobile builds
-    ## Supported asset types
+    ```cpp
+    rizz_profile_begin(SECTION_NAME)
+    // run some code here
+    rizz_profile_end(SECTION_NAME)
+    ```
+
+    There is also a simple console command interface, that can be accessed within the remote profiler web interface. To add your own commands to the console commands, use `the_core->register_console_command`.
+
+    ```cpp
+    the_core->register_console_command("my_command", [](int argc, char* argv[]) {
+        // argc = number of args
+        // argv[0] = command
+        // argv[1], ... = arguments seperated by space
+    });
+    ```
 
     # Coding Style Guide
     ## Directory structure and files
