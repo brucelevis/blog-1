@@ -14,7 +14,7 @@
 <body style="margin:auto">
     **_rizz_ Architecture and Basic usage**
     <small>This document is subject to change</small>
-    <small>Revision 1.0: 6 April 2020</small>
+    <small>Revision 1.1: 10 May 2020</small>
 
     **Github Page**: [github.com/septag/rizz](https://github.com/septag/rizz)
 
@@ -649,12 +649,26 @@
     So, basically there are two main macros that is used to sample parts of the code. `rizz_profile_begin` and `rizz_profile_end`. The samples will be sent to the profiler's http server, and can be viewed by opening `index.html` in `3rdparty/remotery/vis` directory.
 
     ```cpp
-    rizz_profile_begin(SECTION_NAME)
+    rizz_profile_begin(SECTION_NAME);
     // run some code here
-    rizz_profile_end(SECTION_NAME)
+    rizz_profile_end(SECTION_NAME);
     ```
 
-    ## Command line
+    By default, main parts of the frame will be profiled. Like the whole frame and the game update itself.
+    
+    ## GPU Profiler
+    A very basic GPU sample profiling is also supported. It's almost as same cpu profiling, but with the exception that profiling samples must come between stages. To activate GPU profiling, add `RIZZ_CORE_FLAG_PROFILE_GPU` flag to `rizz_config.core_flags` field on initiaization.   
+    Also, the rendering _stages_ themselves profile themselves by default. Each rendering _stage_ will be profiled with the same label as the stage's name.
+
+    ```cpp
+    rizz_gfx_profile_begin(&the_gfx.staged, SECTION_NAME);
+    // issue gpu commands
+    rizz_gfx_profile_end(SECTION_NAME);
+    ```
+
+    **Note** that currently, gpu profiling support is limited to D3d11 and OpenGL backends, Metal profiling is in the works, but currently turned off because of some existing issues.
+
+    ## Command console
     There is also a simple console command interface, that can be accessed within the remote profiler web interface. To add your own commands to the console commands, use `the_core->register_console_command`.
 
     ```cpp
@@ -664,11 +678,28 @@
         // argv[1], ... = arguments seperated by space
     });
     ```
+    
+    # Logging
+    Logging can be done with these macros provided in `rizz.h`. You can also use `rizz_api_core` set of logging functions directly (`print_xxx` functions), but it is recommended that you use the macros because they are just simpler:
 
-    # Coding Style Guide
-    ## Directory structure and files
-    ## Naming
-    ## Formatting
+    - **rizz_log_error**: Outputs error message (type = RIZZ_LOG_LEVEL_ERROR)
+    - **rizz_log_warn**: Outputs warning message (type = RIZZ_LOG_LEVEL_WARN)
+    - **rizz_log_info**: Output info message (type = RIZZ_LOG_LEVEL_INFO)
+    - **rizz_log_verbose**: Output verbose message (type = RIZZ_LOG_LEVEL_VERBOSE)
+    - **rizz_log_debug**: Output debug message, will be disabled on builds other than _DEBUG. (type = RIZZ_LOG_LEVEL_DEBUG)
+
+    You can control logging level with either setting `rizz_config.log_level` field on initialize, or use `the_core->set_log_level` function.
+
+    ## Log backends
+    There are several built-in backends, however you can implement additional logging backends by registering them with `the_core->register_log_backend` function and provide a callback to receive log entries.
+
+    When you call any `rizz_log_xxx` macros on any engine thread (main or job dispatcher threads), it will be queued and sorted by calling timestamp at the end of the frame. Then it will be dispatched to the registered backends. By doing this, we can be sure that the callbacks always happen in the _main_ thread, so the implementation doesn't have to worry about data race issues and whatnot. 
+    
+    However, there are exceptions to this. Some built-in logging backends, like **Terminal**/**Debugger window** and **Android native log** outputs the log immediately after calling `rizz_log_xxx` functions and doesn't wait for queued results, because by nature they are thread-safe and we want to have some immediate log feedback in case something goes wrong.  
+
+    # Changelist
+    - Version 1.1 (May 2020): Added Gpu Profiling, Tweaked shader docs, Added logging
+    - Version 1.0 (April 2020): Initial version
 </body>
 
 <!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace;}</style><script src="../../js/markdeep.min.js" charset="utf-8"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js" charset="utf-8"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
